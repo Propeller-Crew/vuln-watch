@@ -1,0 +1,54 @@
+{
+  "host_label": "my-server",
+  "release": "noble",
+  "state_dir": "/var/lib/vuln-watch",
+  "backup_dir": "/var/backups/vuln-watch",
+  "auto_patch": {
+    "origins": [
+      {
+        "origin": "Ubuntu",
+        "archive_suffix": "-security"
+      },
+      {
+        "origin": "UbuntuESM",
+        "archive_suffix": "-security"
+      },
+      {
+        "origin": "UbuntuESMApps",
+        "archive_suffix": "-security"
+      },
+      {
+        "origin": "nginx",
+        "same_minor_only": true
+      }
+    ],
+    "never": []
+  },
+  "health": {
+    "pm2_users": [
+      "deploy"
+    ],
+    "check_docker": true,
+    "retries": 6,
+    "retry_delay_sec": 10,
+    "extra_urls": []
+  },
+  "inventory": {
+    "lockfile_roots": [
+      "/opt"
+    ],
+    "lockfile_max_depth": 4
+  },
+  "claude": {
+    "user": "deploy",
+    "bin": "/usr/local/bin/claude",
+    "model": "sonnet",
+    "timeout_sec": 300
+  },
+  "telegram": {
+    "env_file": "/etc/vuln-watch/telegram.env",
+    "token_var": "TELEGRAM_BOT_TOKEN",
+    "chat_var": "TELEGRAM_CHAT_ID"
+  },
+  "language": "uk"
+}

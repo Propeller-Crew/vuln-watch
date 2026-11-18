@@ -1,0 +1,9 @@
+[Unit]
+Description=vuln-watch weekly digest (Monday)
+
+[Timer]
+OnCalendar=Mon *-*-* 10:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

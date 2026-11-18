@@ -1,0 +1,10 @@
+[Unit]
+Description=vuln-watch: check vulnerability feeds against this host
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vuln-watch/bin/vuln-watch scan
+TimeoutStartSec=2h
+Nice=10

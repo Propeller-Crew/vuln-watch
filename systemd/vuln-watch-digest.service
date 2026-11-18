@@ -1,0 +1,6 @@
+[Unit]
+Description=vuln-watch weekly digest
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vuln-watch/bin/vuln-watch digest

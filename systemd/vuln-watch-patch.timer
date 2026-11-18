@@ -1,0 +1,9 @@
+[Unit]
+Description=vuln-watch nightly patch window
+
+[Timer]
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

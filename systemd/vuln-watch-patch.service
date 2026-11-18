@@ -1,0 +1,9 @@
+[Unit]
+Description=vuln-watch: install official security updates with live health check + rollback
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vuln-watch/bin/vuln-watch patch
+TimeoutStartSec=3h
