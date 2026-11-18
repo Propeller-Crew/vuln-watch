@@ -50,5 +50,9 @@
     "token_var": "TELEGRAM_BOT_TOKEN",
     "chat_var": "TELEGRAM_CHAT_ID"
   },
-  "language": "uk"
+  "language": "uk",
+  "reboot": {
+    "guard_cmd": null,
+    "max_wait_min": 120
+  }
 }

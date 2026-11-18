@@ -1,0 +1,12 @@
+[Unit]
+Description=vuln-watch: after a planned reboot, compare live services with the pre-reboot baseline
+After=network-online.target multi-user.target nginx.service docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vuln-watch/bin/vuln-watch postboot
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target

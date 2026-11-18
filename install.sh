@@ -23,4 +23,5 @@ mkdir -p /etc/systemd/system/apt-daily-upgrade.service.d
 install -m644 "$SRC/systemd/apt-daily-upgrade-vuln-watch.conf" /etc/systemd/system/apt-daily-upgrade.service.d/vuln-watch.conf
 systemctl daemon-reload
 systemctl enable --now vuln-watch-scan.timer vuln-watch-patch.timer vuln-watch-digest.timer
+systemctl enable vuln-watch-postboot.service
 systemctl list-timers 'vuln-watch-*' --no-pager

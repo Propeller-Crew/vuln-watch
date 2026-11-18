@@ -78,13 +78,14 @@ def regressions(before, after):
     return out
 
 
-def wait_healthy(before):
+def wait_healthy(before, retries=None, delay=None):
     """Re-check a few times (apps may be restarting). Returns (after, problems)."""
     h = cfg()["health"]
+    retries, delay = retries or h["retries"], delay or h["retry_delay_sec"]
     after, probs = None, ["not checked"]
-    for i in range(h["retries"]):
+    for i in range(retries):
         if i:
-            time.sleep(h["retry_delay_sec"])
+            time.sleep(delay)
         after = snapshot()
         probs = regressions(before, after)
         if not probs:

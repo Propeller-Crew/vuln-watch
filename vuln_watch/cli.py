@@ -63,6 +63,54 @@ def cmd_unattended(a):
                     + "\nДив. /var/log/unattended-upgrades/ та `journalctl -u apt-daily-upgrade`.")
 
 
+def cmd_reboot(a):
+    """Planned reboot window: optional guard command (exit 0 = ok to reboot), pm2 save,
+    health baseline, reboot. The post-boot check runs from vuln-watch-postboot.service."""
+    import subprocess
+    r = __import__("vuln_watch.util", fromlist=["cfg"]).cfg().get("reboot", {})
+    deadline = time.time() + 60 * r.get("max_wait_min", 120)
+    guard = r.get("guard_cmd")
+    while guard and subprocess.run(guard, shell=True).returncode != 0:
+        if time.time() > deadline:
+            notify.send("⏸ Плановий ребут скасовано: запобіжник не дозволив до кінця вікна. "
+                        "Запусти пізніше: sudo vuln-watch reboot")
+            return
+        log("guard says wait; retry in 5 min")
+        time.sleep(300)
+    for u in __import__("vuln_watch.util", fromlist=["cfg"]).cfg()["health"]["pm2_users"]:
+        from .util import run
+        run(["bash", "-lc", "pm2 save"], user=u)
+    snap = health.snapshot()
+    log("baseline: " + health.summary(snap))
+    if a.dry_run:
+        print("dry-run: would save baseline and reboot now")
+        return
+    save_state("reboot_baseline.json", snap)
+    append_event("reboot", {"kernel_before": os.uname().release})
+    os.execvp("systemctl", ["systemctl", "reboot"])
+
+
+def cmd_postboot(a):
+    from .util import state_path
+    p = state_path("reboot_baseline.json")
+    if not os.path.exists(p):
+        return
+    before = load_state("reboot_baseline.json")
+    up = float(open("/proc/uptime").read().split()[0])
+    if up < 120:
+        time.sleep(120 - up)
+    after, probs = health.wait_healthy(before, retries=20, delay=30)
+    os.replace(p, p + f".done-{time.strftime('%Y%m%d-%H%M%S')}")
+    down = int(time.time() - before["ts"] - float(open("/proc/uptime").read().split()[0]))
+    rs = patch.reboot_status()
+    msg = (f"🔁 Ребут зроблено. Ядро тепер {os.uname().release}, сервер був недоступний ~{max(down, 0)} с.\n"
+           + ("✅ Усе піднялося: " + health.summary(after) if not probs else
+              "🔴 Не піднялося:\n" + "\n".join("• " + x for x in probs[:15])))
+    if rs:
+        msg += f"\nЩе просить ребут: {', '.join(rs['pkgs'][:5])}"
+    notify.send(msg)
+
+
 def cmd_digest(a):
     ev = read_events(time.time() - 7 * 86400)
     pat = [e for e in ev if e["kind"] == "patched"]
@@ -114,6 +162,8 @@ def main():
     p = sp.add_parser("assess"); p.add_argument("cve"); p.set_defaults(f=cmd_assess)
     p = sp.add_parser("health"); p.add_argument("--json", action="store_true"); p.set_defaults(f=cmd_health)
     p = sp.add_parser("unattended"); p.add_argument("phase", choices=["pre", "post"]); p.set_defaults(f=cmd_unattended)
+    p = sp.add_parser("reboot"); p.add_argument("--dry-run", action="store_true"); p.set_defaults(f=cmd_reboot)
+    p = sp.add_parser("postboot"); p.set_defaults(f=cmd_postboot)
     p = sp.add_parser("digest"); p.add_argument("--dry-run", action="store_true"); p.set_defaults(f=cmd_digest)
     p = sp.add_parser("notify-test"); p.add_argument("--expect"); p.add_argument("--text")
     p.add_argument("--check-only", action="store_true"); p.set_defaults(f=cmd_notify_test)

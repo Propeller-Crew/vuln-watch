@@ -71,6 +71,8 @@ vuln-watch patch [--dry-run] [--only pkg ...]
 vuln-watch health [--json]        # current liveness snapshot
 vuln-watch assess CVE-XXXX-YYYY   # dry-run one nginx advisory (prints the verdict)
 vuln-watch test-rollback <pkg>    # upgrades a harmless pkg, injects a failure, checks the rollback
+vuln-watch reboot [--dry-run]     # planned reboot: guard -> pm2 save -> baseline -> reboot
+vuln-watch postboot               # (runs at boot) compare with the pre-reboot baseline, notify
 vuln-watch digest [--dry-run]
 vuln-watch notify-test [--expect BOT] [--check-only]
 vuln-watch inventory
@@ -87,6 +89,20 @@ vuln-watch inventory
 | `vuln-watch-patch` | 04:30 daily | all pending allowed security updates |
 | `vuln-watch-digest` | Monday 10:00 | weekly summary |
 | drop-in on `apt-daily-upgrade` | with unattended-upgrades | health baseline before, alert on regressions after |
+
+## Planned reboots
+
+vuln-watch never reboots on its own. When you choose a time, schedule a one-off:
+
+```bash
+sudo systemd-run --unit vuln-watch-reboot-once --on-calendar="2026-11-19 04:00:00" /opt/vuln-watch/bin/vuln-watch reboot
+sudo systemctl stop vuln-watch-reboot-once.timer   # cancel
+```
+
+`reboot.guard_cmd` (optional) is a script that exits 0 when rebooting is OK. If it fails, the
+reboot is retried every 5 min for up to `reboot.max_wait_min`, then cancelled with a
+notification. After boot, `vuln-watch-postboot.service` compares every vhost, unit, pm2 app
+and container with the pre-reboot baseline and reports the result.
 
 ## Config (`/etc/vuln-watch/config.json`)
 
