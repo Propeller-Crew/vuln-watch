@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 
 from . import analyze, feeds, inventory, notify, patch
-from .util import log, load_state, save_state, append_event, dpkg_cmp
+from .util import log, load_state, save_state, append_event, dpkg_cmp, tr
 
 MAX_LLM_CALLS = 10
 OSV_EVERY_SEC = 20 * 3600
@@ -64,8 +64,10 @@ def run_scan(dry_run=False):
                 seen["usn"][key] = "auto"
             else:
                 to_notify.append(f"• {key} {n['title']} ({', '.join(n['cves'][:3])})\n"
-                                 f"  уражено: {', '.join(f'{a} {dpkg[a]['version']} < {b}' for a, b in hit)}\n"
-                                 f"  офіційного фіксу в дозволених репо немає (можливо, лише Ubuntu Pro) — потрібна ручна дія")
+                                 + tr("  уражено: ", "  affected: ")
+                                 + ", ".join(f"{a} {dpkg[a]['version']} < {b}" for a, b in hit) + "\n"
+                                 + tr("  офіційного фіксу в дозволених репо немає (можливо, лише Ubuntu Pro) — потрібна ручна дія",
+                                      "  no official fix in allowed repos (maybe Ubuntu Pro only) — manual action needed"))
                 seen["usn"][key] = "notified"
     except Exception as e:  # noqa
         log(f"USN feed failed: {e}")
@@ -92,7 +94,7 @@ def run_scan(dry_run=False):
                     want_patch.append(f"nginx {', '.join(adv['cves'])}")
                 if res["action"] != "none":
                     to_notify.append(f"• nginx {', '.join(adv['cves'])} — {adv['title']} [{adv.get('severity')}]\n"
-                                     f"  {res['verdict']}" + (f"\n  План: {res['plan']}" if res.get("plan") else ""))
+                                     f"  {res['verdict']}" + (tr("\n  План: ", "\n  Plan: ") + res['plan'] if res.get("plan") else ""))
         except Exception as e:  # noqa
             log(f"nginx feed failed: {e}")
 
@@ -107,7 +109,7 @@ def run_scan(dry_run=False):
         for e, pk in feeds.kev_matches(fresh, dpkg, inv["docker"]):
             dec, facts = ubuntu_decision(e["cveID"], pk, dpkg)
             append_event("kev_match", {"cve": e["cveID"], "pkgs": pk, "decision": dec})
-            title = f"🔥 KEV {e['cveID']} {e['vendorProject']} {e['product']} (активно експлуатують)"
+            title = f"🔥 KEV {e['cveID']} {e['vendorProject']} {e['product']} " + tr("(активно експлуатують)", "(actively exploited)")
             if dec == "closed":
                 continue
             if dec == "auto":
@@ -115,9 +117,12 @@ def run_scan(dry_run=False):
                 continue
             if dec == "reboot":
                 seen["kev"][e["cveID"]] = "reboot"
-                to_notify.append(f"• {title}\n  Фікс уже встановлено ({facts['decisive']['fixed_in']}), "
-                                 f"але працює старе ядро {facts['decisive']['running_kernel']} — "
-                                 f"діра відкрита до ребуту. Потрібен ребут сервера.")
+                d = facts['decisive']
+                to_notify.append(f"• {title}\n" + tr(
+                    f"  Фікс уже встановлено ({d['fixed_in']}), але працює старе ядро {d['running_kernel']} — "
+                    f"діра відкрита до ребуту. Потрібен ребут сервера.",
+                    f"  Fix is installed ({d['fixed_in']}), but the old kernel {d['running_kernel']} is still running — "
+                    f"vulnerable until reboot. Server reboot needed."))
                 continue
             if not can_llm():
                 continue
@@ -125,7 +130,7 @@ def run_scan(dry_run=False):
             append_event("assessed", {"src": "kev", "cve": e["cveID"], **res})
             if res["action"] != "none" and res.get("affected") is not False:
                 to_notify.append(f"• {title}\n  {res['verdict']}"
-                                 + (f"\n  План: {res['plan']}" if res.get("plan") else ""))
+                                 + (tr("\n  План: ", "\n  Plan: ") + res['plan'] if res.get("plan") else ""))
     except Exception as e:  # noqa
         log(f"KEV failed: {e}")
 
@@ -145,7 +150,7 @@ def run_scan(dry_run=False):
         log(f"urgent auto-patch: {want_patch}")
         patched = patch.run_patch(dry_run=dry_run)
     if to_notify:
-        notify.send("Знайшов вразливості, що нас стосуються:\n\n" + "\n\n".join(to_notify[:20]),
+        notify.send(tr("Знайшов вразливості, що нас стосуються:\n\n", "Found vulnerabilities that affect this host:\n\n") + "\n\n".join(to_notify[:20]),
                     dry_run=dry_run)
     return {"notified": len(to_notify), "patch": patched, "first_run": first_run}
 
@@ -225,8 +230,8 @@ def osv_check(seen, silent=False):
                 key = f"{app}|{name}@{ver}|{vid}"
                 current[key] = sev
                 if sev in NOTIFY_OSV and key not in seen["osv"]:
-                    fix = ", ".join(d.get("fixed", [])[:2]) or "немає"
-                    per_app[app].append(f"{name}@{ver} {sev} {vid} → фікс {fix}")
+                    fix = ", ".join(d.get("fixed", [])[:2]) or tr("немає", "none")
+                    per_app[app].append(f"{name}@{ver} {sev} {vid} → " + tr("фікс ", "fix ") + fix)
     save_state("osv_current.json", current)
     for k in current:
         seen["osv"].setdefault(k, time.strftime("%Y-%m-%d"))
@@ -236,6 +241,8 @@ def osv_check(seen, silent=False):
         return []
     out = []
     for app, lines in sorted(per_app.items()):
-        out.append(f"• Апка {app} (npm/pip, НЕ оновлюю сам):\n  " + "\n  ".join(sorted(set(lines))[:8])
-                   + "\n  План: гілка security/deps → npm audit fix → білд/тест → PR. Скажи «так» — зроблю.")
+        out.append(tr(f"• Апка {app} (npm/pip, НЕ оновлюю сам):\n  ", f"• App {app} (npm/pip, NOT auto-updated):\n  ")
+                   + "\n  ".join(sorted(set(lines))[:8])
+                   + tr("\n  План: гілка security/deps → npm audit fix → білд/тест → PR. Скажи «так» — зроблю.",
+                        "\n  Plan: branch security/deps → npm audit fix → build/test → PR."))
     return out

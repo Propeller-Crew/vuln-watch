@@ -5,7 +5,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from . import inventory
-from .util import cfg, run, log
+from .util import cfg, run, log, tr
 
 
 def _probe(name, ssl):
@@ -62,7 +62,7 @@ def regressions(before, after):
     for n, c in before["vhosts"].items():
         a = after["vhosts"].get(n, 0)
         if not _bad(c) and _bad(a):
-            out.append(f"сайт {n}: {c} → {a}")
+            out.append(tr(f"сайт {n}: {c} → {a}", f"site {n}: {c} → {a}"))
     if before.get("nginx_active") == "active" and after.get("nginx_active") != "active":
         out.append(f"nginx: {after.get('nginx_active')}")
     for u in sorted(set(after["failed_units"]) - set(before["failed_units"])):

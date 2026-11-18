@@ -95,7 +95,7 @@ vuln-watch inventory
 vuln-watch never reboots on its own. When you choose a time, schedule a one-off:
 
 ```bash
-sudo systemd-run --unit vuln-watch-reboot-once --on-calendar="2026-11-19 04:00:00" /opt/vuln-watch/bin/vuln-watch reboot
+sudo systemd-run --unit vuln-watch-reboot-once --on-calendar="YYYY-MM-DD HH:MM:SS" /opt/vuln-watch/bin/vuln-watch reboot
 sudo systemctl stop vuln-watch-reboot-once.timer   # cancel
 ```
 

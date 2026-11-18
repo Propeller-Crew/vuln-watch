@@ -12,6 +12,7 @@ CONFIG_PATH = os.environ.get("VULN_WATCH_CONFIG", "/etc/vuln-watch/config.json")
 UA = "vuln-watch/1.0 (+https://github.com/)"
 
 DEFAULTS = {
+    "language": "en",
     "release": "noble",
     "state_dir": "/var/lib/vuln-watch",
     "backup_dir": "/var/backups/vuln-watch",
@@ -133,3 +134,12 @@ def lock(name="vuln-watch"):
 def dpkg_cmp(a, op, b):
     """op: lt, le, eq, ge, gt"""
     return run(["dpkg", "--compare-versions", a, op, b]).returncode == 0
+
+
+def lang():
+    return "uk" if cfg().get("language") == "uk" else "en"
+
+
+def tr(uk, en):
+    """Pick a user-facing string by config `language` (uk | en, default en)."""
+    return uk if lang() == "uk" else en

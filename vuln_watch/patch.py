@@ -13,7 +13,7 @@ import tarfile
 import time
 
 from . import health, notify
-from .util import cfg, log, run, load_state, save_state, append_event, dpkg_cmp
+from .util import cfg, log, run, load_state, save_state, append_event, dpkg_cmp, tr
 
 APT_ENV = {"DEBIAN_FRONTEND": "noninteractive", "NEEDRESTART_MODE": "a",
            "NEEDRESTART_SUSPEND": ""}
@@ -192,9 +192,12 @@ def run_patch(dry_run=False, only=None, any_origin=False, inject_failure=False, 
     sim = run(["apt-get", "-s", "install", "--only-upgrade", "-y"] + DPKG_OPTS + spec, env=APT_ENV)
     removals = re.findall(r"^Remv (\S+)", sim.stdout, re.M)
     if sim.returncode != 0 or removals:
-        msg = (f"⚠️ Оновлення безпеки НЕ поставлені автоматично: apt хоче видалити пакети "
-               f"{removals or ''} або симуляція впала.\nПакети: {', '.join(spec)}\n"
-               f"План: подивитись `apt-get -s install --only-upgrade {' '.join(spec)}` вручну.")
+        msg = tr(f"⚠️ Оновлення безпеки НЕ поставлені автоматично: apt хоче видалити пакети "
+                 f"{removals or ''} або симуляція впала.\nПакети: {', '.join(spec)}\n"
+                 f"План: подивитись `apt-get -s install --only-upgrade {' '.join(spec)}` вручну.",
+                 f"⚠️ Security updates were NOT installed automatically: apt wants to remove packages "
+                 f"{removals or ''} or the simulation failed.\nPackages: {', '.join(spec)}\n"
+                 f"Plan: review `apt-get -s install --only-upgrade {' '.join(spec)}` manually.")
         notify.send(msg, dry_run=dry_run)
         return {"status": "refused", "removals": removals}
     if dry_run:
@@ -218,7 +221,7 @@ def run_patch(dry_run=False, only=None, any_origin=False, inject_failure=False, 
     nginx_touched = any(n.startswith("nginx") for n, *_ in targets) or drift
     problems = []
     if up.returncode != 0:
-        problems.append(f"apt-get завершився з кодом {up.returncode}")
+        problems.append(tr(f"apt-get завершився з кодом {up.returncode}", f"apt-get exited with code {up.returncode}"))
     if nginx_touched:
         ok, out = _nginx_ok()
         if not ok:
@@ -228,17 +231,17 @@ def run_patch(dry_run=False, only=None, any_origin=False, inject_failure=False, 
     after, probs = health.wait_healthy(before)
     problems += probs
     if inject_failure:
-        problems.append("ТЕСТ: штучна поломка для перевірки відкату")
+        problems.append(tr("ТЕСТ: штучна поломка для перевірки відкату", "TEST: injected failure to verify rollback"))
 
     upgraded = [f"{n} {i} → {v}" for n, i, v, _, _ in targets]
     result = {"targets": upgraded, "backup": bdir, "drift": drift}
     if not problems:
         append_event("patched", {"pkgs": upgraded})
         result["status"] = "ok"
-        msg = "✅ Автоматично поставлено оновлення безпеки:\n" + "\n".join("• " + u for u in upgraded)
+        msg = tr("✅ Автоматично поставлено оновлення безпеки:\n", "✅ Security updates installed automatically:\n") + "\n".join("• " + u for u in upgraded)
         if drift:
-            msg += f"\n\nПакет переписав конфіги — повернув наші: {', '.join(drift)}"
-        msg += f"\n\nПеревірка: {health.summary(after)}"
+            msg += tr("\n\nПакет переписав конфіги — повернув наші: ", "\n\nThe package changed configs — restored ours: ") + ", ".join(drift)
+        msg += tr("\n\nПеревірка: ", "\n\nCheck: ") + health.summary(after)
         msg += _reboot_line()
         if not quiet_ok:
             notify.send(msg)
@@ -271,12 +274,18 @@ def run_patch(dry_run=False, only=None, any_origin=False, inject_failure=False, 
     append_event("rollback", {"pkgs": upgraded, "problems": problems, "recovered": not still})
     result.update(status="rolled_back", problems=problems, still_broken=still,
                   versions_after=versions, versions_restored=rolled)
-    msg = ("🔴 Оновлення зламало сервіси — ВІДКОТИВ.\n" + "\n".join("• " + u for u in upgraded)
-           + "\n\nЩо впало:\n" + "\n".join("• " + p for p in problems[:15])
-           + f"\n\nПісля відкату: {'усе живе ✅' if not still else 'ДОСІ ПРОБЛЕМИ: ' + '; '.join(still[:10])}"
-           + f"\nВерсії повернуто: {'так' if rolled else 'НІ'} {versions}"
-           + (f"\nНемає старого .deb для: {meta['no_deb']}" if meta['no_deb'] else "")
-           + f"\nБекап: {bdir}\nЦі версії більше автоматично не ставлю, поки не вийде новіша.")
+    msg = (tr("🔴 Оновлення зламало сервіси — ВІДКОТИВ.\n", "🔴 The update broke services — ROLLED BACK.\n")
+           + "\n".join("• " + u for u in upgraded)
+           + tr("\n\nЩо впало:\n", "\n\nWhat broke:\n") + "\n".join("• " + p for p in problems[:15])
+           + tr("\n\nПісля відкату: ", "\n\nAfter rollback: ")
+           + (tr("усе живе ✅", "all healthy ✅") if not still
+              else tr("ДОСІ ПРОБЛЕМИ: ", "STILL BROKEN: ") + "; ".join(still[:10]))
+           + tr("\nВерсії повернуто: ", "\nVersions restored: ")
+           + (tr("так", "yes") if rolled else tr("НІ", "NO")) + f" {versions}"
+           + (tr("\nНемає старого .deb для: ", "\nNo old .deb for: ") + str(meta['no_deb']) if meta['no_deb'] else "")
+           + tr("\nБекап: ", "\nBackup: ") + bdir
+           + tr("\nЦі версії більше автоматично не ставлю, поки не вийде новіша.",
+                "\nThese versions are blocked from auto-install until a newer one appears."))
     notify.send(msg)
     return result
 
@@ -290,5 +299,7 @@ def _reboot_line():
     if st.get("notified") == key:
         return ""
     save_state("reboot.json", {"notified": key, "ts": time.time()})
-    return (f"\n\n🔁 Потрібен ребут (зробиш сам у тихий час): ядро зараз {rs['running_kernel']}, "
-            f"пакети: {', '.join(rs['pkgs'][:8])}")
+    return tr(f"\n\n🔁 Потрібен ребут (зробиш сам у тихий час): ядро зараз {rs['running_kernel']}, "
+              f"пакети: {', '.join(rs['pkgs'][:8])}",
+              f"\n\n🔁 Reboot needed (do it yourself at a quiet time): running kernel {rs['running_kernel']}, "
+              f"packages: {', '.join(rs['pkgs'][:8])}")

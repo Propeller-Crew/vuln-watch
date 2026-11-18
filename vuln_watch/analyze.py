@@ -5,7 +5,7 @@ import os
 import re
 import tempfile
 
-from .util import cfg, log, run
+from .util import cfg, log, run, tr
 
 PROMPT = """You are a security triage assistant for ONE Linux server. Decide whether the
 vulnerability below affects THIS server, using only the facts given.
@@ -20,8 +20,8 @@ Rules:
   package available from an allowed repo and the upgrade is a patch-level update),
   "notify" (human must act: major upgrade, source change, app dependency, reboot, unclear).
 - Facts under "decisive" (Ubuntu tracker + version comparison) are authoritative — follow them.
-- "verdict": ONE short sentence (max 200 chars) in {lang}, human-friendly, e.g. "HTTP/2 вимкнений, nginx
-  уже 1.30.7 — закрито".
+- "verdict": ONE short sentence (max 200 chars) in {lang}, human-friendly, e.g. "HTTP/2 is disabled and nginx
+  is already 1.30.7 — closed".
 - "plan": if action is notify — at most 3 very short steps in {lang} (max 300 chars total),
   no forensic advice, no generic boilerplate; else "".
 
@@ -51,7 +51,7 @@ def _extract_json(text):
 def assess(vuln, facts, fallback=None):
     """vuln/facts: dicts. Returns dict (see PROMPT) + 'source': 'claude'|'rules'."""
     c = cfg()["claude"]
-    prompt = PROMPT.format(lang="Ukrainian" if cfg().get("language") == "uk" else "English",
+    prompt = PROMPT.format(lang=tr("Ukrainian", "English"),
                            vuln=json.dumps(vuln, ensure_ascii=False, indent=1)[:12000],
                            facts=json.dumps(facts, ensure_ascii=False, indent=1)[:12000])
     bin_ = c["bin"]
@@ -71,7 +71,8 @@ def assess(vuln, facts, fallback=None):
         log(f"claude failed: {e}")
     out = dict(fallback or {"affected": None, "official_fix_available": False,
                             "action": "notify", "severity": "unknown",
-                            "verdict": "Не вдалося оцінити автоматично — перевір вручну.",
+                            "verdict": tr("Не вдалося оцінити автоматично — перевір вручну.",
+                                         "Could not assess automatically — check manually."),
                             "plan": ""})
     out["source"] = "rules"
     return out

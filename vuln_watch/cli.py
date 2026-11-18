@@ -6,7 +6,7 @@ import sys
 import time
 
 from . import feeds, health, inventory, notify, patch, scan
-from .util import lock, log, load_state, save_state, read_events, append_event
+from .util import lock, log, load_state, save_state, read_events, append_event, tr
 
 
 def cmd_scan(a):
@@ -38,7 +38,7 @@ def cmd_assess(a):
         sys.exit(f"{a.cve} not found on nginx.org")
     res = scan.assess_nginx(advs[0], inv)
     print(json.dumps(res, ensure_ascii=False, indent=1))
-    notify.send(f"[сухий прогін] nginx {a.cve} — {advs[0]['title']}\n{res['verdict']}", dry_run=True)
+    notify.send(tr("[сухий прогін]", "[dry run]") + f" nginx {a.cve} — {advs[0]['title']}\n{res['verdict']}", dry_run=True)
 
 
 def cmd_health(a):
@@ -58,9 +58,11 @@ def cmd_unattended(a):
     after, probs = health.wait_healthy(before)
     if probs:
         append_event("ua_regression", {"problems": probs})
-        notify.send("🔴 Після нічного unattended-upgrades щось впало:\n"
+        notify.send(tr("🔴 Після нічного unattended-upgrades щось впало:\n",
+                       "🔴 Something broke after nightly unattended-upgrades:\n")
                     + "\n".join("• " + p for p in probs[:15])
-                    + "\nДив. /var/log/unattended-upgrades/ та `journalctl -u apt-daily-upgrade`.")
+                    + tr("\nДив. /var/log/unattended-upgrades/ та `journalctl -u apt-daily-upgrade`.",
+                         "\nSee /var/log/unattended-upgrades/ and `journalctl -u apt-daily-upgrade`."))
 
 
 def cmd_reboot(a):
@@ -72,8 +74,10 @@ def cmd_reboot(a):
     guard = r.get("guard_cmd")
     while guard and subprocess.run(guard, shell=True).returncode != 0:
         if time.time() > deadline:
-            notify.send("⏸ Плановий ребут скасовано: запобіжник не дозволив до кінця вікна. "
-                        "Запусти пізніше: sudo vuln-watch reboot")
+            notify.send(tr("⏸ Плановий ребут скасовано: запобіжник не дозволив до кінця вікна. "
+                           "Запусти пізніше: sudo vuln-watch reboot",
+                           "⏸ Planned reboot cancelled: the guard did not allow it before the window closed. "
+                           "Run later: sudo vuln-watch reboot"))
             return
         log("guard says wait; retry in 5 min")
         time.sleep(300)
@@ -103,11 +107,12 @@ def cmd_postboot(a):
     os.replace(p, p + f".done-{time.strftime('%Y%m%d-%H%M%S')}")
     down = int(time.time() - before["ts"] - float(open("/proc/uptime").read().split()[0]))
     rs = patch.reboot_status()
-    msg = (f"🔁 Ребут зроблено. Ядро тепер {os.uname().release}, сервер був недоступний ~{max(down, 0)} с.\n"
-           + ("✅ Усе піднялося: " + health.summary(after) if not probs else
-              "🔴 Не піднялося:\n" + "\n".join("• " + x for x in probs[:15])))
+    msg = (tr(f"🔁 Ребут зроблено. Ядро тепер {os.uname().release}, сервер був недоступний ~{max(down, 0)} с.\n",
+              f"🔁 Reboot done. Kernel is now {os.uname().release}, server was down ~{max(down, 0)} s.\n")
+           + (tr("✅ Усе піднялося: ", "✅ Everything is back: ") + health.summary(after) if not probs else
+              tr("🔴 Не піднялося:\n", "🔴 Did not come back:\n") + "\n".join("• " + x for x in probs[:15])))
     if rs:
-        msg += f"\nЩе просить ребут: {', '.join(rs['pkgs'][:5])}"
+        msg += tr("\nЩе просить ребут: ", "\nStill requests a reboot: ") + ", ".join(rs['pkgs'][:5])
     notify.send(msg)
 
 
@@ -117,21 +122,24 @@ def cmd_digest(a):
     rb = [e for e in ev if e["kind"] == "rollback"]
     osv = [e for e in ev if e["kind"] == "osv"]
     rs = patch.reboot_status()
-    lines = ["🗓 Тижневий дайджест безпеки"]
-    lines.append(f"Автооновлень: {len(pat)}" + (" — " + "; ".join(p for e in pat for p in e["pkgs"])[:600] if pat else ""))
-    lines.append(f"Відкатів: {len(rb)}")
+    lines = [tr("🗓 Тижневий дайджест безпеки", "🗓 Weekly security digest")]
+    lines.append(tr("Автооновлень: ", "Auto-updates: ") + f"{len(pat)}" + (" — " + "; ".join(p for e in pat for p in e["pkgs"])[:600] if pat else ""))
+    lines.append(tr("Відкатів: ", "Rollbacks: ") + str(len(rb)))
     if osv:
-        lines.append(f"Вразливості в залежностях апок: {osv[-1]['total']} (high/critical: {osv[-1]['high_crit']})")
+        lines.append(tr("Вразливості в залежностях апок: ", "Vulnerabilities in app dependencies: ")
+                     + f"{osv[-1]['total']} (high/critical: {osv[-1]['high_crit']})")
     if rs:
-        lines.append(f"🔁 Досі потрібен ребут: ядро {rs['running_kernel']} ({', '.join(rs['pkgs'][:5])})")
+        lines.append(tr("🔁 Досі потрібен ребут: ядро ", "🔁 Reboot still needed: kernel ")
+                     + f"{rs['running_kernel']} ({', '.join(rs['pkgs'][:5])})")
     import apt
     c = apt.Cache()
     pend = sorted({o.origin for p in c if p.is_installed and p.is_upgradable
                    for o in p.candidate.origins} - {"Ubuntu"})
     if pend:
-        lines.append("Не-security оновлення з інших репо чекають ручного рішення: " + ", ".join(pend))
+        lines.append(tr("Не-security оновлення з інших репо чекають ручного рішення: ",
+                        "Non-security updates from other repos await a manual decision: ") + ", ".join(pend))
     h = health.snapshot()
-    lines.append("Стан: " + health.summary(h))
+    lines.append(tr("Стан: ", "Status: ") + health.summary(h))
     notify.send("\n".join(lines), dry_run=a.dry_run)
 
 
@@ -141,7 +149,8 @@ def cmd_notify_test(a):
     if a.expect and (not me or me["username"] != a.expect):
         sys.exit(f"bot mismatch: expected {a.expect}")
     if not a.check_only:
-        notify.send(a.text or "Тестове повідомлення: vuln-watch налаштований і стежить за вразливостями.")
+        notify.send(a.text or tr("Тестове повідомлення: vuln-watch налаштований і стежить за вразливостями.",
+                                 "Test message: vuln-watch is set up and watching for vulnerabilities."))
 
 
 def cmd_inventory(a):
