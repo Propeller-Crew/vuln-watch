@@ -52,6 +52,29 @@ def snapshot():
     return snap
 
 
+def cold_start_problems():
+    """Apps that run fine now but would not start again after a restart or reboot.
+    A running process keeps serving from memory even when its files on disk are broken
+    (e.g. a failed `next build` left .next without BUILD_ID) - a reboot exposes it."""
+    import os
+    out = []
+    for u in cfg()["health"]["pm2_users"]:
+        p = run(["bash", "-lc", "pm2 jlist"], user=u, timeout=60)
+        try:
+            procs = json.loads(p.stdout[p.stdout.index("["):])
+        except (ValueError, KeyError):
+            continue
+        for x in procs:
+            e = x.get("pm2_env", {})
+            if e.get("status") != "online":
+                continue
+            cwd = e.get("pm_cwd") or ""
+            nxt = os.path.join(cwd, ".next")
+            if os.path.isdir(nxt) and not os.path.exists(os.path.join(nxt, "BUILD_ID")):
+                out.append(f"pm2 {u}/{x['name']}: {nxt} has no BUILD_ID (last build failed?)")
+    return out
+
+
 def _bad(code):
     return code == 0 or code >= 500
 

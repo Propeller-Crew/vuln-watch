@@ -99,6 +99,11 @@ sudo systemd-run --unit vuln-watch-reboot-once --on-calendar="YYYY-MM-DD HH:MM:S
 sudo systemctl stop vuln-watch-reboot-once.timer   # cancel
 ```
 
+Before the guard, `vuln-watch reboot` runs a cold-start check: an app that is online now but
+could not start from disk (a Next.js app whose `.next` has no `BUILD_ID` because the last build
+failed) cancels the reboot with a Telegram message. Such an app keeps serving from memory for
+days and only breaks at the next restart. The weekly digest lists them too.
+
 `reboot.guard_cmd` (optional) is a script that exits 0 when rebooting is OK. If it fails, the
 reboot is retried every 5 min for up to `reboot.max_wait_min`, then cancelled with a
 notification. After boot, `vuln-watch-postboot.service` compares every vhost, unit, pm2 app

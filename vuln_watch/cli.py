@@ -70,6 +70,15 @@ def cmd_reboot(a):
     health baseline, reboot. The post-boot check runs from vuln-watch-postboot.service."""
     import subprocess
     r = __import__("vuln_watch.util", fromlist=["cfg"]).cfg().get("reboot", {})
+    cold = health.cold_start_problems()
+    if cold:
+        log("cold-start check failed: " + "; ".join(cold))
+        if not a.dry_run:
+            notify.send(tr("⛔ Плановий ребут скасовано: ці апки зараз працюють з пам'яті, але після ребуту не піднімуться:\n",
+                           "⛔ Planned reboot cancelled: these apps run from memory now but would not start after a reboot:\n")
+                        + "\n".join("• " + c for c in cold[:15])
+                        + tr("\nПерезбери їх, потім: sudo vuln-watch reboot", "\nRebuild them, then: sudo vuln-watch reboot"))
+        return
     deadline = time.time() + 60 * r.get("max_wait_min", 120)
     guard = r.get("guard_cmd")
     while guard and subprocess.run(guard, shell=True).returncode != 0:
@@ -138,6 +147,9 @@ def cmd_digest(a):
     if pend:
         lines.append(tr("Не-security оновлення з інших репо чекають ручного рішення: ",
                         "Non-security updates from other repos await a manual decision: ") + ", ".join(pend))
+    cold = health.cold_start_problems()
+    if cold:
+        lines.append(tr("⚠️ Не піднімуться після рестарту: ", "⚠️ Would not start after a restart: ") + "; ".join(cold[:5]))
     h = health.snapshot()
     lines.append(tr("Стан: ", "Status: ") + health.summary(h))
     notify.send("\n".join(lines), dry_run=a.dry_run)
